@@ -1,0 +1,4 @@
+interface:
+  display_name: "Thread Project Linker"
+  short_description: "Move a Codex thread into the correct project/workspace."
+  default_prompt: "Move codex://threads/<thread-id> into project path <absolute-project-path> and verify metadata updates."
