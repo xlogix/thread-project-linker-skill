@@ -1,6 +1,6 @@
 ---
 name: thread-project-linker
-description: Reassign Codex threads to the correct project/workspace by updating both thread DB cwd metadata and rollout session metadata together. Use when a user asks to move one thread, bulk migrate all threads from an old folder to a new folder, or migrate only selected deeplink thread IDs during a folder migration.
+description: Reassign Codex threads to the correct project/workspace by updating both thread DB cwd metadata and rollout session metadata together. Use when a user asks to move one thread, bulk migrate active threads from an old folder/path to a new folder/path, or migrate selected deeplink thread IDs. Use --include-archived only when archived records must be moved too.
 ---
 
 # Thread Project Linker
@@ -53,6 +53,15 @@ python3 scripts/reassign_thread.py \
   --deeplink codex://threads/<thread-b>
 ```
 
+Include archived threads too:
+
+```bash
+python3 scripts/reassign_thread.py \
+  --from-name old-folder-name \
+  --to /absolute/path/to/new-project \
+  --include-archived
+```
+
 Dry run (no writes):
 
 ```bash
@@ -68,6 +77,7 @@ python3 scripts/reassign_thread.py \
 2. Resolve migration scope:
    - explicit IDs + `--project`
    - all threads from `--from` or `--from-name` + `--to`
+   - active-only by default, unless `--include-archived` is provided
    - optional filtering by specified IDs in bulk mode
 3. Validate each target thread and rollout file before writing.
 4. Backup each rollout file.
@@ -80,4 +90,5 @@ python3 scripts/reassign_thread.py \
 
 - Prefer `--dry-run` first on large bulk migrations.
 - Use absolute paths for `--project`, `--from`, and `--to`.
+- Archived threads are excluded unless `--include-archived` is passed.
 - Keep generated backup files until you confirm the migration in Codex UI.

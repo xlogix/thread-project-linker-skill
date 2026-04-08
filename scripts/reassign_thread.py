@@ -83,18 +83,22 @@ def update_rollout_session_meta_cwd(rollout_path: Path, thread_id: str, new_cwd:
     return backup_path
 
 
-def fetch_thread_rows(cur: sqlite3.Cursor, thread_ids: list[str]) -> list[dict]:
+def fetch_thread_rows(cur: sqlite3.Cursor, thread_ids: list[str], include_archived: bool) -> list[dict]:
     rows: list[dict] = []
     missing: list[str] = []
+    skipped_archived: list[str] = []
     for thread_id in thread_ids:
         row = cur.execute(
-            'SELECT id, cwd, rollout_path FROM threads WHERE id = ?',
+            'SELECT id, cwd, rollout_path, archived FROM threads WHERE id = ?',
             (thread_id,),
         ).fetchone()
         if row is None:
             missing.append(thread_id)
             continue
-        row_id, cwd, rollout_path = row
+        row_id, cwd, rollout_path, archived = row
+        if archived and not include_archived:
+            skipped_archived.append(thread_id)
+            continue
         if not rollout_path:
             raise RuntimeError(f"Thread '{row_id}' has no rollout path.")
         rows.append(
@@ -102,41 +106,61 @@ def fetch_thread_rows(cur: sqlite3.Cursor, thread_ids: list[str]) -> list[dict]:
                 'id': row_id,
                 'old_cwd': cwd,
                 'rollout_path': rollout_path,
+                'archived': bool(archived),
             }
         )
 
     if missing:
         raise RuntimeError(f'Threads not found in state DB: {", ".join(missing)}')
+    if skipped_archived:
+        raise RuntimeError(
+            'Archived threads are excluded by default. Re-run with --include-archived: '
+            + ', '.join(skipped_archived)
+        )
     return rows
 
 
-def fetch_rows_by_old_cwd(cur: sqlite3.Cursor, old_cwd: str) -> list[dict]:
-    results = cur.execute(
-        'SELECT id, cwd, rollout_path FROM threads WHERE cwd = ? ORDER BY updated_at DESC',
-        (old_cwd,),
-    ).fetchall()
+def fetch_rows_by_old_cwd(cur: sqlite3.Cursor, old_cwd: str, include_archived: bool) -> list[dict]:
+    if include_archived:
+        results = cur.execute(
+            'SELECT id, cwd, rollout_path, archived FROM threads WHERE cwd = ? ORDER BY updated_at DESC',
+            (old_cwd,),
+        ).fetchall()
+    else:
+        results = cur.execute(
+            'SELECT id, cwd, rollout_path, archived FROM threads WHERE cwd = ? AND archived = 0 ORDER BY updated_at DESC',
+            (old_cwd,),
+        ).fetchall()
     return [
         {
             'id': row_id,
             'old_cwd': cwd,
             'rollout_path': rollout_path,
+            'archived': bool(archived),
         }
-        for row_id, cwd, rollout_path in results
+        for row_id, cwd, rollout_path, archived in results
     ]
 
 
-def fetch_rows_by_old_folder_name(cur: sqlite3.Cursor, folder_name: str) -> list[dict]:
-    results = cur.execute(
-        'SELECT id, cwd, rollout_path FROM threads WHERE cwd = ? OR cwd LIKE ? ORDER BY updated_at DESC',
-        (folder_name, f'%/{folder_name}'),
-    ).fetchall()
+def fetch_rows_by_old_folder_name(cur: sqlite3.Cursor, folder_name: str, include_archived: bool) -> list[dict]:
+    if include_archived:
+        results = cur.execute(
+            'SELECT id, cwd, rollout_path, archived FROM threads WHERE cwd = ? OR cwd LIKE ? ORDER BY updated_at DESC',
+            (folder_name, f'%/{folder_name}'),
+        ).fetchall()
+    else:
+        results = cur.execute(
+            'SELECT id, cwd, rollout_path, archived FROM threads WHERE (cwd = ? OR cwd LIKE ?) AND archived = 0 ORDER BY updated_at DESC',
+            (folder_name, f'%/{folder_name}'),
+        ).fetchall()
     return [
         {
             'id': row_id,
             'old_cwd': cwd,
             'rollout_path': rollout_path,
+            'archived': bool(archived),
         }
-        for row_id, cwd, rollout_path in results
+        for row_id, cwd, rollout_path, archived in results
     ]
 
 
@@ -238,6 +262,11 @@ def main() -> int:
         action='store_true',
         help='Validate and print what would change without writing.',
     )
+    parser.add_argument(
+        '--include-archived',
+        action='store_true',
+        help='Include archived threads in migration. Default is active threads only.',
+    )
     args = parser.parse_args()
 
     thread_ids = [parse_thread_id(value) for value in args.thread + args.deeplink]
@@ -267,11 +296,14 @@ def main() -> int:
         cur = conn.cursor()
         if bulk_mode:
             if args.from_path:
-                source_rows = fetch_rows_by_old_cwd(cur, normalized_path(args.from_path))
+                source_rows = fetch_rows_by_old_cwd(cur, normalized_path(args.from_path), args.include_archived)
             else:
-                source_rows = fetch_rows_by_old_folder_name(cur, args.from_name.strip())
+                source_rows = fetch_rows_by_old_folder_name(cur, args.from_name.strip(), args.include_archived)
             if not source_rows:
-                raise RuntimeError('No threads matched the provided source filter.')
+                raise RuntimeError(
+                    'No threads matched the provided source filter. '
+                    'By default only active threads are included; use --include-archived if needed.'
+                )
 
             if thread_ids:
                 selected_ids = set(thread_ids)
@@ -285,16 +317,20 @@ def main() -> int:
             else:
                 rows = source_rows
         else:
-            rows = fetch_thread_rows(cur, thread_ids)
+            rows = fetch_thread_rows(cur, thread_ids, args.include_archived)
     finally:
         conn.close()
 
     print(f'db_path={db_path}')
     print(f'mode={"bulk" if bulk_mode else "explicit"}')
+    print(f'include_archived={str(args.include_archived).lower()}')
     print(f'threads_count={len(rows)}')
     print(f'new_cwd={target_cwd}')
     for row in rows:
-        print(f'thread={row["id"]} old_cwd={row["old_cwd"]} rollout_path={row["rollout_path"]}')
+        print(
+            f'thread={row["id"]} archived={str(row["archived"]).lower()} '
+            f'old_cwd={row["old_cwd"]} rollout_path={row["rollout_path"]}'
+        )
 
     if args.dry_run:
         print('dry_run=true')
