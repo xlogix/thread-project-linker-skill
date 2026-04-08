@@ -1,4 +1,4 @@
 interface:
   display_name: "Thread Project Linker"
-  short_description: "Move a Codex thread into the correct project/workspace."
-  default_prompt: "Move codex://threads/<thread-id> into project path <absolute-project-path> and verify metadata updates."
+  short_description: "Migrate Codex threads across projects in bulk or by deeplink IDs."
+  default_prompt: "Migrate threads from old folder <from-name|from-path> to <new-project-path>, optionally restricted to specific codex://threads/<id> deeplinks, and verify DB + rollout metadata."
