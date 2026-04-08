@@ -102,6 +102,7 @@ python3 scripts/reassign_thread.py \
 - DB updates run in a transaction.
 - If a failure occurs during migration, it restores rollout files and DB cwd values.
 - Prefer `--dry-run` before large migrations.
+- After running a migration, restart the Codex app so project/thread grouping refreshes and the change takes effect in UI.
 
 ## License
 
