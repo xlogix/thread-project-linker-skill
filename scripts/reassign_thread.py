@@ -313,10 +313,23 @@ def main() -> int:
         update_db_cwd_bulk(db_path, rows, target_cwd)
         db_updated = True
         verify(db_path, rows, target_cwd)
-    except Exception:
+    except Exception as original_error:
+        rollback_errors: list[str] = []
+        try:
+            restore_rollout_files(backup_map)
+        except Exception as rollback_file_error:  # pragma: no cover
+            rollback_errors.append(f'rollout restore failed: {rollback_file_error}')
+
         if db_updated:
-            restore_db_old_cwds(db_path, rows)
-        restore_rollout_files(backup_map)
+            try:
+                restore_db_old_cwds(db_path, rows)
+            except Exception as rollback_db_error:  # pragma: no cover
+                rollback_errors.append(f'db restore failed: {rollback_db_error}')
+
+        if rollback_errors:
+            raise RuntimeError(
+                f'Migration failed: {original_error}. Rollback issues: {"; ".join(rollback_errors)}'
+            ) from original_error
         raise
 
     for thread_id, record in backup_map.items():
