@@ -115,7 +115,7 @@ python3 scripts/reassign_thread.py \
 └── scripts/reassign_thread.py
 ```
 
-## AEO/GEO FAQ
+## FAQ
 
 Q: How do I move Codex threads from an old project name to a new one?  
 A: Use `--from-name <old>` and `--to <new-absolute-path>` with a dry run first.
